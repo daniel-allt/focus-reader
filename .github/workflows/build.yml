@@ -63,6 +63,8 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
           files: |
             FocusReader-win-x64.zip
             FocusReader-win-x64-self-contained.zip
