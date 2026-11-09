@@ -110,6 +110,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private string? TryApplySettings(AppSettings newSettings)
     {
+        if (!SystemCursorManager.CanLoad(newSettings.Cursor, newSettings.CustomCursorPath))
+            return "Não foi possível carregar o cursor selecionado. Escolha outro cursor ou outro arquivo .cur/.ani.";
+
         if (!_hotkey.Register(newSettings.Hotkey))
         {
             _hotkey.Register(_settings.Hotkey);

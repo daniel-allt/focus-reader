@@ -62,6 +62,19 @@ internal static class SystemCursorManager
             TryDeleteMarker();
     }
 
+    public static bool CanLoad(CursorChoice choice, string? customPath)
+    {
+        if (choice == CursorChoice.Unchanged)
+            return true;
+
+        var handle = CreateCursorHandle(choice, customPath);
+        if (handle == IntPtr.Zero)
+            return false;
+
+        DestroyCursor(handle);
+        return true;
+    }
+
     private static IntPtr CreateCursorHandle(CursorChoice choice, string? customPath)
     {
         if (choice == CursorChoice.Custom)
