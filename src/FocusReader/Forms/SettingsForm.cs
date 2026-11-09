@@ -26,6 +26,8 @@ internal sealed class SettingsForm : Form
     private readonly NumericUpDown _width = new() { Minimum = 40, Maximum = 4000, Increment = 10, Width = 70 };
     private readonly NumericUpDown _height = new() { Minimum = 6, Maximum = 600, Width = 70 };
     private readonly NumericUpDown _offset = new() { Minimum = -200, Maximum = 200, Width = 70 };
+    private readonly CheckBox _stabilize = new() { Text = "Ativada", AutoSize = true };
+    private readonly NumericUpDown _tolerance = new() { Minimum = 1, Maximum = 400, Width = 70 };
     private readonly HotkeyTextBox _hotkeyBox = new() { Width = 220 };
     private readonly Button _clearHotkey = new() { Text = "Limpar", AutoSize = true };
     private readonly PreviewPanel _preview = new() { Size = new Size(480, 110), Margin = new Padding(3, 10, 3, 3) };
@@ -100,6 +102,7 @@ internal sealed class SettingsForm : Form
         AddRow(table, "Opacidade:", Flow(_opacity, _opacityLabel));
         AddRow(table, "Tamanho do realce:", Flow(_width, Caption("x"), _height, Caption("px (largura x altura)")));
         AddRow(table, "Distância do cursor:", Flow(_offset, Caption("px acima da ponta do cursor")));
+        AddRow(table, "Estabilização vertical:", Flow(_stabilize, _tolerance, Caption("px de tolerância antes de mudar de linha")));
         AddRow(table, "Atalho global:", Flow(_hotkeyBox, _clearHotkey));
 
         var hint = new Label
@@ -162,6 +165,7 @@ internal sealed class SettingsForm : Form
         _opacity.ValueChanged += (_, _) => UpdatePreview();
         _width.ValueChanged += (_, _) => UpdatePreview();
         _height.ValueChanged += (_, _) => UpdatePreview();
+        _stabilize.CheckedChanged += (_, _) => _tolerance.Enabled = _stabilize.Checked;
         _clearHotkey.Click += (_, _) => _hotkeyBox.Hotkey = null;
         _hotkeyBox.Enter += (_, _) => _setHotkeySuspended(true);
         _hotkeyBox.Leave += (_, _) => _setHotkeySuspended(false);
@@ -180,6 +184,9 @@ internal sealed class SettingsForm : Form
         _width.Value = s.OverlayWidth;
         _height.Value = s.OverlayHeight;
         _offset.Value = s.CursorOffset;
+        _stabilize.Checked = s.VerticalStabilization;
+        _tolerance.Value = s.VerticalTolerance;
+        _tolerance.Enabled = s.VerticalStabilization;
         _hotkeyBox.Hotkey = s.Hotkey;
         _loading = false;
         OnCursorChanged();
@@ -197,6 +204,8 @@ internal sealed class SettingsForm : Form
             OverlayWidth = (int)_width.Value,
             OverlayHeight = (int)_height.Value,
             CursorOffset = (int)_offset.Value,
+            VerticalStabilization = _stabilize.Checked,
+            VerticalTolerance = (int)_tolerance.Value,
             Hotkey = _hotkeyBox.Hotkey,
         };
         s.Normalize();

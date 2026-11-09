@@ -10,7 +10,10 @@ namespace FocusReader.Forms;
 /// </summary>
 internal sealed class OverlayForm : Form
 {
+    private const double SlideFactor = 0.35;
+
     private readonly System.Windows.Forms.Timer _fallbackTimer = new() { Interval = 50 };
+    private readonly System.Windows.Forms.Timer _slideTimer = new() { Interval = 10 };
     private readonly LowLevelMouseProc _hookProc;
     private IntPtr _mouseHook;
 
@@ -21,6 +24,12 @@ internal sealed class OverlayForm : Form
     private int _baseWidth = 85;
     private int _baseHeight = 30;
     private int _baseOffset = 2;
+    private bool _stabilize = true;
+    private int _baseTolerance = 18;
+
+    private int _cursorX;
+    private int _anchorY;
+    private double? _currentY;
     private byte _alpha = 90;
 
     public OverlayForm()
@@ -36,6 +45,7 @@ internal sealed class OverlayForm : Form
 
         _hookProc = MouseHookCallback;
         _fallbackTimer.Tick += (_, _) => MoveTo(Cursor.Position);
+        _slideTimer.Tick += (_, _) => Slide();
     }
 
     protected override bool ShowWithoutActivation => true;
@@ -57,6 +67,8 @@ internal sealed class OverlayForm : Form
         _baseWidth = settings.OverlayWidth;
         _baseHeight = settings.OverlayHeight;
         _baseOffset = settings.CursorOffset;
+        _stabilize = settings.VerticalStabilization;
+        _baseTolerance = settings.VerticalTolerance;
         ApplyAlpha();
         ForceReposition();
     }
@@ -77,6 +89,7 @@ internal sealed class OverlayForm : Form
     public void StopFollowing()
     {
         _fallbackTimer.Stop();
+        _slideTimer.Stop();
         if (_mouseHook != IntPtr.Zero)
         {
             UnhookWindowsHookEx(_mouseHook);
@@ -111,6 +124,7 @@ internal sealed class OverlayForm : Form
         {
             StopFollowing();
             _fallbackTimer.Dispose();
+            _slideTimer.Dispose();
         }
 
         base.Dispose(disposing);
@@ -133,6 +147,8 @@ internal sealed class OverlayForm : Form
     private void ForceReposition()
     {
         _lastCursor = new Point(int.MinValue, int.MinValue);
+        _currentY = null;
+        _slideTimer.Stop();
         if (IsHandleCreated)
             MoveTo(Cursor.Position);
     }
@@ -144,13 +160,57 @@ internal sealed class OverlayForm : Form
 
         _lastCursor = cursor;
         UpdateScale(cursor);
+        _cursorX = cursor.X;
+
+        // Vertical dead zone: the highlight keeps its line until the cursor drifts past the tolerance.
+        if (!_stabilize || _currentY is null)
+        {
+            _anchorY = cursor.Y;
+            _currentY = cursor.Y;
+            _slideTimer.Stop();
+        }
+        else if (Math.Abs(cursor.Y - _anchorY) > Scale(_baseTolerance))
+        {
+            _anchorY = cursor.Y;
+            _slideTimer.Start();
+        }
+
+        Place();
+    }
+
+    private void Slide()
+    {
+        if (_currentY is not { } current)
+        {
+            _slideTimer.Stop();
+            return;
+        }
+
+        var remaining = _anchorY - current;
+        if (Math.Abs(remaining) < 0.5)
+        {
+            _currentY = _anchorY;
+            _slideTimer.Stop();
+        }
+        else
+        {
+            _currentY = current + remaining * SlideFactor;
+        }
+
+        Place();
+    }
+
+    private void Place()
+    {
+        if (!IsHandleCreated || _currentY is not { } y)
+            return;
 
         var width = Scale(_baseWidth);
         var height = Scale(_baseHeight);
         var offset = Scale(_baseOffset);
 
         SetWindowPos(Handle, HWND_TOPMOST,
-            cursor.X - width / 2, cursor.Y - offset - height, width, height,
+            _cursorX - width / 2, (int)Math.Round(y) - offset - height, width, height,
             SWP_NOACTIVATE | SWP_NOOWNERZORDER);
     }
 

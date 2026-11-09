@@ -7,6 +7,7 @@ Aplicativo para Windows (C# / WinForms, .NET 8) que ajuda na leitura: ao ativar 
 - Fica na **bandeja do sistema** (system tray), sem janela na barra de tarefas.
 - Menu de contexto do ícone: **Ativar/Desativar modo de leitura**, **Configurações...** e **Sair**. Duplo clique no ícone abre as configurações.
 - **Atalho global** (padrão `Ctrl + Alt + R`) para ativar/desativar o modo de leitura de qualquer programa.
+- **Estabilização vertical**: pequenos desvios verticais do mouse não tiram o realce da linha.
 - Realce **click-through**: não atrapalha cliques, seleção de texto nem rolagem.
 - Ajusta o tamanho do realce ao DPI de cada monitor.
 - O cursor original do usuário é restaurado ao desativar, ao sair, ao encerrar a sessão do Windows e na próxima execução caso o app tenha sido finalizado de forma inesperada.
@@ -20,6 +21,7 @@ Aplicativo para Windows (C# / WinForms, .NET 8) que ajuda na leitura: ao ativar 
 | Opacidade | 5% a 95% (o restante é transparência) |
 | Tamanho do realce | Largura x altura em pixels (escalado pelo DPI) |
 | Distância do cursor | Espaço entre a ponta do cursor e a borda inferior do realce |
+| Estabilização vertical | O realce fica preso na linha e segue o mouse só na horizontal até o cursor se afastar mais que a tolerância (padrão 18 px); então desliza suavemente para a nova linha |
 | Atalho global | Qualquer combinação com Ctrl/Alt/Shift/Win, ou F1–F24 sozinhas |
 
 As configurações ficam em `%APPDATA%\FocusReader\settings.json`.

@@ -15,6 +15,8 @@ internal sealed class AppSettings
     public int OverlayWidth { get; set; } = 85;
     public int OverlayHeight { get; set; } = 30;
     public int CursorOffset { get; set; } = 2;
+    public bool VerticalStabilization { get; set; } = true;
+    public int VerticalTolerance { get; set; } = 18;
     public HotkeyDefinition? Hotkey { get; set; } = HotkeyDefinition.Default;
 
     [JsonIgnore]
@@ -41,6 +43,7 @@ internal sealed class AppSettings
         OverlayWidth = Math.Clamp(OverlayWidth, 40, 4000);
         OverlayHeight = Math.Clamp(OverlayHeight, 6, 600);
         CursorOffset = Math.Clamp(CursorOffset, -200, 200);
+        VerticalTolerance = Math.Clamp(VerticalTolerance, 1, 400);
         OverlayColor = OverlayColor;
         if (!Enum.IsDefined(Cursor))
             Cursor = CursorChoice.Hand;
