@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using static FocusReader.Native.NativeMethods;
@@ -42,6 +43,8 @@ internal static class Blur
 /// <summary>
 /// Blurred snapshot of the whole virtual screen, rendered on a background thread while blurring is
 /// shown so capturing and scaling never stall the UI thread (which also runs the mouse hook).
+/// The screen is captured straight into a small bitmap with GDI halftone averaging, then stretched
+/// back with a fixed-point bilinear filter into a DIB that the window can BitBlt directly.
 /// </summary>
 internal sealed class BlurBackdrop : IDisposable
 {
@@ -81,11 +84,7 @@ internal sealed class BlurBackdrop : IDisposable
         Interlocked.Increment(ref _session);
         _wake.Set();
         lock (_gate)
-        {
-            if (_frame != IntPtr.Zero)
-                DeleteObject(_frame);
             _frame = IntPtr.Zero;
-        }
     }
 
     /// <summary>Copies the part of the current frame under <paramref name="clip"/> (window client coordinates).</summary>
@@ -114,75 +113,225 @@ internal sealed class BlurBackdrop : IDisposable
 
     private void Run(int session)
     {
-        Bitmap? capture = null;
-        Bitmap? small = null;
+        using var renderer = new Renderer();
         try
         {
             while (Volatile.Read(ref _session) == session)
             {
                 var watch = System.Diagnostics.Stopwatch.StartNew();
-                if (Render(session, ref capture, ref small))
+                var area = SystemInformation.VirtualScreen;
+                var frame = renderer.Render(area, _factor);
+                LastRenderMs = watch.Elapsed.TotalMilliseconds;
+
+                if (frame != IntPtr.Zero)
                 {
-                    LastRenderMs = watch.Elapsed.TotalMilliseconds;
+                    lock (_gate)
+                    {
+                        if (Volatile.Read(ref _session) != session)
+                            break;
+
+                        _frame = frame;
+                        _frameArea = area;
+                    }
+
+                    renderer.Flip();
                     FrameReady?.Invoke();
                 }
 
-                _wake.WaitOne(Math.Max(30, FrameIntervalMs - (int)watch.ElapsedMilliseconds));
+                // Never spend more than about half of one core on blurring, even on slow machines.
+                var elapsed = (int)watch.ElapsedMilliseconds;
+                _wake.WaitOne(Math.Max(Math.Max(30, elapsed), FrameIntervalMs - elapsed));
             }
         }
         finally
         {
-            capture?.Dispose();
-            small?.Dispose();
+            lock (_gate)
+            {
+                if (renderer.Owns(_frame))
+                    _frame = IntPtr.Zero;
+            }
         }
     }
 
-    private bool Render(int session, ref Bitmap? capture, ref Bitmap? small)
+    /// <summary>Owns the worker's GDI bitmaps: one small capture and two full-size frames (front/back).</summary>
+    private sealed unsafe class Renderer : IDisposable
     {
-        var area = SystemInformation.VirtualScreen;
-        if (area.Width <= 0 || area.Height <= 0)
-            return false;
+        private readonly IntPtr[] _frames = new IntPtr[2];
+        private readonly uint*[] _frameBits = new uint*[2];
+        private int _back;
+        private Size _frameSize;
+        private IntPtr _small;
+        private uint* _smallBits;
+        private Size _smallSize;
+        private int[] _x0 = [];
+        private int[] _x1 = [];
+        private int[] _wx = [];
+        private uint[] _rowA = [];
+        private uint[] _rowB = [];
 
-        if (capture is null || capture.Size != area.Size)
+        public bool Owns(IntPtr frame) => frame != IntPtr.Zero && (frame == _frames[0] || frame == _frames[1]);
+
+        public void Flip() => _back ^= 1;
+
+        public IntPtr Render(Rectangle area, int factor)
         {
-            capture?.Dispose();
-            capture = new Bitmap(area.Width, area.Height, PixelFormat.Format32bppPArgb);
-        }
+            if (area.Width <= 0 || area.Height <= 0)
+                return IntPtr.Zero;
 
-        try
-        {
-            using (var g = Graphics.FromImage(capture))
-                g.CopyFromScreen(area.Location, Point.Empty, area.Size);
-
-            small = Blur.Shrink(capture, _factor, small);
-            using (var g = Graphics.FromImage(capture))
+            if (area.Size != _frameSize)
             {
-                g.CompositingMode = CompositingMode.SourceCopy;
-                Blur.Expand(g, small, new Rectangle(Point.Empty, area.Size), InterpolationMode.Bilinear);
+                for (var i = 0; i < 2; i++)
+                {
+                    Free(ref _frames[i]);
+                    _frames[i] = CreateDib(area.Size, out var bits);
+                    _frameBits[i] = (uint*)bits;
+                }
+
+                _frameSize = area.Size;
+                _smallSize = Size.Empty;
             }
-        }
-        catch (Exception)
-        {
-            // Capturing fails on the secure desktop (UAC, lock screen); try again on the next frame.
-            return false;
+
+            var small = new Size(Math.Max(1, area.Width / factor), Math.Max(1, area.Height / factor));
+            if (small != _smallSize)
+            {
+                Free(ref _small);
+                _small = CreateDib(small, out var bits);
+                _smallBits = (uint*)bits;
+                _smallSize = small;
+                BuildTables(area.Width, small.Width);
+            }
+
+            if (_frames[_back] == IntPtr.Zero || _small == IntPtr.Zero || !Capture(area))
+                return IntPtr.Zero;
+
+            Expand(_frameBits[_back]);
+            return _frames[_back];
         }
 
-        var frame = capture.GetHbitmap();
-        lock (_gate)
+        public void Dispose()
         {
-            if (Volatile.Read(ref _session) != session)
-            {
-                DeleteObject(frame);
+            Free(ref _frames[0]);
+            Free(ref _frames[1]);
+            Free(ref _small);
+        }
+
+        private bool Capture(Rectangle area)
+        {
+            var screen = GetDC(IntPtr.Zero);
+            if (screen == IntPtr.Zero)
                 return false;
-            }
 
-            if (_frame != IntPtr.Zero)
-                DeleteObject(_frame);
-            _frame = frame;
-            _frameArea = area;
+            var memory = CreateCompatibleDC(screen);
+            var previous = SelectObject(memory, _small);
+            SetStretchBltMode(memory, HALFTONE);
+            SetBrushOrgEx(memory, 0, 0, IntPtr.Zero);
+
+            // Fails on the secure desktop (UAC, lock screen); the next frame tries again.
+            var ok = StretchBlt(memory, 0, 0, _smallSize.Width, _smallSize.Height,
+                screen, area.X, area.Y, area.Width, area.Height, SRCCOPY);
+            GdiFlush();
+
+            SelectObject(memory, previous);
+            DeleteDC(memory);
+            ReleaseDC(IntPtr.Zero, screen);
+            return ok;
         }
 
-        return true;
+        private void BuildTables(int width, int smallWidth)
+        {
+            _x0 = new int[width];
+            _x1 = new int[width];
+            _wx = new int[width];
+            for (var x = 0; x < width; x++)
+                Sample(x, width, smallWidth, out _x0[x], out _x1[x], out _wx[x]);
+
+            _rowA = new uint[width];
+            _rowB = new uint[width];
+        }
+
+        private void Expand(uint* target)
+        {
+            int width = _frameSize.Width, height = _frameSize.Height;
+            int rowAIndex = -1, rowBIndex = -1;
+
+            for (var y = 0; y < height; y++)
+            {
+                Sample(y, height, _smallSize.Height, out var y0, out var y1, out var wy);
+
+                if (rowAIndex != y0)
+                {
+                    if (rowBIndex == y0)
+                    {
+                        (_rowA, _rowB) = (_rowB, _rowA);
+                        rowAIndex = y0;
+                        rowBIndex = -1;
+                    }
+                    else
+                    {
+                        StretchRow(y0, _rowA);
+                        rowAIndex = y0;
+                    }
+                }
+
+                if (rowBIndex != y1)
+                {
+                    StretchRow(y1, _rowB);
+                    rowBIndex = y1;
+                }
+
+                var output = target + (long)y * width;
+                fixed (uint* a = _rowA, b = _rowB)
+                {
+                    for (var x = 0; x < width; x++)
+                        output[x] = Lerp(a[x], b[x], wy);
+                }
+            }
+        }
+
+        private void StretchRow(int smallY, uint[] row)
+        {
+            var source = _smallBits + (long)smallY * _smallSize.Width;
+            for (var x = 0; x < row.Length; x++)
+                row[x] = Lerp(source[_x0[x]], source[_x1[x]], _wx[x]);
+        }
+
+        // Maps a destination pixel to its two source neighbours and the 8-bit weight of the second one.
+        private static void Sample(int i, int length, int smallLength, out int i0, out int i1, out int weight)
+        {
+            var position = (int)Math.Max(0, ((2L * i + 1) * smallLength * 128 / length) - 128);
+            i0 = Math.Min(position >> 8, smallLength - 1);
+            i1 = Math.Min(i0 + 1, smallLength - 1);
+            weight = position & 0xFF;
+        }
+
+        private static uint Lerp(uint a, uint b, int weight)
+        {
+            var inverse = (uint)(256 - weight);
+            var w = (uint)weight;
+            var redBlue = (((a & 0x00FF00FF) * inverse + (b & 0x00FF00FF) * w) >> 8) & 0x00FF00FF;
+            var alphaGreen = (((a >> 8) & 0x00FF00FF) * inverse + ((b >> 8) & 0x00FF00FF) * w) & 0xFF00FF00;
+            return redBlue | alphaGreen;
+        }
+
+        private static IntPtr CreateDib(Size size, out IntPtr bits)
+        {
+            var header = new BITMAPINFOHEADER
+            {
+                biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>(),
+                biWidth = size.Width,
+                biHeight = -size.Height,
+                biPlanes = 1,
+                biBitCount = 32,
+            };
+            return CreateDIBSection(IntPtr.Zero, ref header, 0, out bits, IntPtr.Zero, 0);
+        }
+
+        private static void Free(ref IntPtr bitmap)
+        {
+            if (bitmap != IntPtr.Zero)
+                DeleteObject(bitmap);
+            bitmap = IntPtr.Zero;
+        }
     }
 }
 
