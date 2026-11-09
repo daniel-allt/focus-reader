@@ -35,6 +35,9 @@ internal static class SystemCursorManager
 
             MarkApplied();
         }
+
+        if (!_applied)
+            throw new InvalidOperationException("Não foi possível substituir o cursor do sistema.");
     }
 
     public static void Restore()

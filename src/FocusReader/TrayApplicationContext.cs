@@ -69,7 +69,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
             }
             catch (Exception ex)
             {
-                _tray.ShowBalloonTip(4000, "Focus Reader", ex.Message, ToolTipIcon.Warning);
+                SystemCursorManager.Restore();
+                _overlay.StopFollowing();
+                _active = false;
+                UpdateUi();
+                _tray.ShowBalloonTip(6000, "Focus Reader",
+                    $"{ex.Message} O modo de leitura não foi ativado. Verifique o cursor nas Configurações.",
+                    ToolTipIcon.Warning);
+                return;
             }
 
             _overlay.ApplySettings(_settings);
