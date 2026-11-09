@@ -12,7 +12,7 @@ internal sealed class PreviewPanel : Panel
 
     public Color HighlightColor { get; set; } = Color.Yellow;
     public int HighlightOpacity { get; set; } = 35;
-    public int HighlightWidth { get; set; } = 520;
+    public int HighlightWidth { get; set; } = 85;
     public int HighlightHeight { get; set; } = 30;
 
     public PreviewPanel()

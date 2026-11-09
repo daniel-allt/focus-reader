@@ -18,7 +18,7 @@ internal sealed class OverlayForm : Form
     private IntPtr _lastMonitor;
     private double _scale = 1.0;
 
-    private int _baseWidth = 520;
+    private int _baseWidth = 85;
     private int _baseHeight = 30;
     private int _baseOffset = 2;
     private byte _alpha = 90;

@@ -12,7 +12,7 @@ internal sealed class AppSettings
     public string? CustomCursorPath { get; set; }
     public string OverlayColorHex { get; set; } = "#FFE600";
     public int OverlayOpacity { get; set; } = 35;
-    public int OverlayWidth { get; set; } = 520;
+    public int OverlayWidth { get; set; } = 85;
     public int OverlayHeight { get; set; } = 30;
     public int CursorOffset { get; set; } = 2;
     public HotkeyDefinition? Hotkey { get; set; } = HotkeyDefinition.Default;
