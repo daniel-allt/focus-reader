@@ -161,8 +161,8 @@ internal sealed class OverlayForm : Form
         if (cursor == _lastCursor || !IsHandleCreated)
             return;
 
-        var dx = Math.Abs(cursor.X - _lastCursor.X);
-        var dy = Math.Abs(cursor.Y - _lastCursor.Y);
+        var dx = Math.Abs((long)cursor.X - _lastCursor.X);
+        var dy = Math.Abs((long)cursor.Y - _lastCursor.Y);
         _lastCursor = cursor;
         UpdateScale(cursor);
         _cursorX = cursor.X;
