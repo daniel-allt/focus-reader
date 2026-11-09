@@ -7,6 +7,9 @@ namespace FocusReader.Forms;
 /// <summary>Cheap blur: shrink the image with prefiltering, then stretch it back with bilinear interpolation.</summary>
 internal static class Blur
 {
+    // Before Windows 10 2004, WDA_EXCLUDEFROMCAPTURE acts like WDA_MONITOR (black in captures).
+    public static bool CaptureExclusionSupported { get; } = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041);
+
     public static int FactorFor(int strength) => Math.Clamp(strength, 1, 10) + 1;
 
     public static Bitmap Shrink(Bitmap source, int factor, Bitmap? reuse = null)
@@ -147,7 +150,7 @@ internal sealed class BlurPaneForm : Form
     {
         base.OnHandleCreated(e);
         SetLayeredWindowAttributes(Handle, 0, 255, LWA_ALPHA);
-        ExcludedFromCapture = SetWindowDisplayAffinity(Handle, WDA_EXCLUDEFROMCAPTURE);
+        ExcludedFromCapture = Blur.CaptureExclusionSupported && SetWindowDisplayAffinity(Handle, WDA_EXCLUDEFROMCAPTURE);
     }
 
     protected override void OnPaintBackground(PaintEventArgs e)

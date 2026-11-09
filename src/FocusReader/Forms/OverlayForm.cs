@@ -348,7 +348,8 @@ internal sealed class OverlayForm : Form
     {
         // Keep the highlight out of the blurred snapshot so it doesn't leave a trail in it.
         if (IsHandleCreated)
-            SetWindowDisplayAffinity(Handle, _blurEnabled ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE);
+            SetWindowDisplayAffinity(Handle,
+                _blurEnabled && Blur.CaptureExclusionSupported ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE);
     }
 
     private void ApplyAlpha()
