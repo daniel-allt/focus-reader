@@ -37,6 +37,10 @@ internal static class NativeMethods
     public const uint OCR_IBEAM = 32513;
     public const uint OCR_HAND = 32649;
 
+    public const uint IMAGE_CURSOR = 2;
+    public const uint LR_DEFAULTCOLOR = 0x0000;
+    public const uint LR_LOADFROMFILE = 0x0010;
+
     public const int VK_LWIN = 0x5B;
     public const int VK_RWIN = 0x5C;
 
@@ -75,6 +79,12 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr CopyIcon(IntPtr hIcon);
+
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "LoadImageW")]
+    public static extern IntPtr LoadImage(IntPtr hInst, string name, uint type, int cx, int cy, uint fuLoad);
+
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "LoadImageW")]
+    public static extern IntPtr LoadImage(IntPtr hInst, IntPtr resourceId, uint type, int cx, int cy, uint fuLoad);
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
