@@ -18,8 +18,8 @@ internal sealed class AppSettings
     public bool VerticalStabilization { get; set; } = true;
     public int VerticalTolerance { get; set; } = 18;
     public int VerticalFollowMs { get; set; } = 500;
-    public bool DimSurroundings { get; set; }
-    public int DimOpacity { get; set; } = 25;
+    public bool BlurSurroundings { get; set; }
+    public int BlurStrength { get; set; } = 3;
     public HotkeyDefinition? Hotkey { get; set; } = HotkeyDefinition.Default;
 
     [JsonIgnore]
@@ -48,7 +48,7 @@ internal sealed class AppSettings
         CursorOffset = Math.Clamp(CursorOffset, -200, 200);
         VerticalTolerance = Math.Clamp(VerticalTolerance, 1, 400);
         VerticalFollowMs = Math.Clamp(VerticalFollowMs, 100, 5000);
-        DimOpacity = Math.Clamp(DimOpacity, 5, 80);
+        BlurStrength = Math.Clamp(BlurStrength, 1, 10);
         OverlayColor = OverlayColor;
         if (!Enum.IsDefined(Cursor))
             Cursor = CursorChoice.Hand;

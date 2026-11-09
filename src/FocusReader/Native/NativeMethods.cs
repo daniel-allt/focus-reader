@@ -100,6 +100,13 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
 
+    public const uint WDA_NONE = 0x0;
+    public const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
+
     [DllImport("user32.dll")]
     public static extern short GetAsyncKeyState(int vKey);
 

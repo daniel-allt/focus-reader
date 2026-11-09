@@ -28,8 +28,8 @@ internal sealed class SettingsForm : Form
     private readonly NumericUpDown _offset = new() { Minimum = -200, Maximum = 200, Width = 70 };
     private readonly CheckBox _stabilize = new() { Text = "Ativada", AutoSize = true };
     private readonly NumericUpDown _tolerance = new() { Minimum = 1, Maximum = 400, Width = 70 };
-    private readonly CheckBox _dim = new() { Text = "Ativado", AutoSize = true };
-    private readonly NumericUpDown _dimOpacity = new() { Minimum = 5, Maximum = 80, Increment = 5, Width = 70 };
+    private readonly CheckBox _blur = new() { Text = "Ativado", AutoSize = true };
+    private readonly NumericUpDown _blurStrength = new() { Minimum = 1, Maximum = 10, Width = 70 };
     private readonly NumericUpDown _followMs = new() { Minimum = 100, Maximum = 5000, Increment = 100, Width = 70 };
     private readonly HotkeyTextBox _hotkeyBox = new() { Width = 220 };
     private readonly Button _clearHotkey = new() { Text = "Limpar", AutoSize = true };
@@ -107,7 +107,7 @@ internal sealed class SettingsForm : Form
         AddRow(table, "Distância do cursor:", Flow(_offset, Caption("px acima da ponta do cursor")));
         AddRow(table, "Estabilização vertical:", Flow(_stabilize, _tolerance, Caption("px de tolerância antes de mudar de linha (segure Shift para mover livre)")));
         AddRow(table, "Ajuste da linha:", Flow(_followMs, Caption("ms seguindo o cursor depois de destravar, antes de travar de novo")));
-        AddRow(table, "Ofuscar ao redor:", Flow(_dim, _dimOpacity, Caption("% de escurecimento (segure Ctrl para ver tudo)")));
+        AddRow(table, "Desfocar ao redor:", Flow(_blur, _blurStrength, Caption("intensidade de 1 a 10 (segure Ctrl para ver tudo nítido)")));
         AddRow(table, "Atalho global:", Flow(_hotkeyBox, _clearHotkey));
 
         var hint = new Label
@@ -168,12 +168,12 @@ internal sealed class SettingsForm : Form
         _pickColor.Click += (_, _) => PickColor();
         _colorSwatch.Click += (_, _) => PickColor();
         _opacity.ValueChanged += (_, _) => UpdatePreview();
-        _dim.CheckedChanged += (_, _) =>
+        _blur.CheckedChanged += (_, _) =>
         {
-            _dimOpacity.Enabled = _dim.Checked;
+            _blurStrength.Enabled = _blur.Checked;
             UpdatePreview();
         };
-        _dimOpacity.ValueChanged += (_, _) => UpdatePreview();
+        _blurStrength.ValueChanged += (_, _) => UpdatePreview();
         _width.ValueChanged += (_, _) => UpdatePreview();
         _height.ValueChanged += (_, _) => UpdatePreview();
         _stabilize.CheckedChanged += (_, _) => _tolerance.Enabled = _followMs.Enabled = _stabilize.Checked;
@@ -198,9 +198,9 @@ internal sealed class SettingsForm : Form
         _stabilize.Checked = s.VerticalStabilization;
         _tolerance.Value = s.VerticalTolerance;
         _followMs.Value = s.VerticalFollowMs;
-        _dim.Checked = s.DimSurroundings;
-        _dimOpacity.Value = s.DimOpacity;
-        _dimOpacity.Enabled = s.DimSurroundings;
+        _blur.Checked = s.BlurSurroundings;
+        _blurStrength.Value = s.BlurStrength;
+        _blurStrength.Enabled = s.BlurSurroundings;
         _tolerance.Enabled = _followMs.Enabled = s.VerticalStabilization;
         _hotkeyBox.Hotkey = s.Hotkey;
         _loading = false;
@@ -222,8 +222,8 @@ internal sealed class SettingsForm : Form
             VerticalStabilization = _stabilize.Checked,
             VerticalTolerance = (int)_tolerance.Value,
             VerticalFollowMs = (int)_followMs.Value,
-            DimSurroundings = _dim.Checked,
-            DimOpacity = (int)_dimOpacity.Value,
+            BlurSurroundings = _blur.Checked,
+            BlurStrength = (int)_blurStrength.Value,
             Hotkey = _hotkeyBox.Hotkey,
         };
         s.Normalize();
@@ -251,7 +251,7 @@ internal sealed class SettingsForm : Form
         _preview.HighlightOpacity = _opacity.Value;
         _preview.HighlightWidth = (int)_width.Value;
         _preview.HighlightHeight = (int)_height.Value;
-        _preview.DimOpacity = _dim.Checked ? (int)_dimOpacity.Value : 0;
+        _preview.BlurStrength = _blur.Checked ? (int)_blurStrength.Value : 0;
         _preview.Invalidate();
     }
 

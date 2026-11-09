@@ -30,9 +30,11 @@ internal sealed class OverlayForm : Form
     private long _followUntil;
     private bool _shiftHeld;
 
-    private readonly DimPaneForm[] _dimPanes = [new(), new(), new(), new()];
-    private bool _dimEnabled;
-    private bool _dimSuppressed;
+    private readonly System.Windows.Forms.Timer _blurTimer = new() { Interval = 120 };
+    private readonly BlurBackdrop _backdrop = new();
+    private readonly BlurPaneForm[] _blurPanes;
+    private bool _blurEnabled;
+    private bool _blurSuppressed;
 
     private int _cursorX;
     private int _anchorY;
@@ -57,6 +59,8 @@ internal sealed class OverlayForm : Form
             MoveTo(Cursor.Position);
         };
         _slideTimer.Tick += (_, _) => Slide();
+        _blurPanes = [new(_backdrop), new(_backdrop), new(_backdrop), new(_backdrop)];
+        _blurTimer.Tick += (_, _) => RefreshBlur();
     }
 
     protected override bool ShowWithoutActivation => true;
@@ -81,13 +85,12 @@ internal sealed class OverlayForm : Form
         _stabilize = settings.VerticalStabilization;
         _baseTolerance = settings.VerticalTolerance;
         _followMs = settings.VerticalFollowMs;
-        _dimEnabled = settings.DimSurroundings;
-        var dimAlpha = (byte)Math.Round(settings.DimOpacity * 255 / 100.0);
-        foreach (var pane in _dimPanes)
-            pane.SetAlpha(dimAlpha);
+        _blurEnabled = settings.BlurSurroundings;
+        _backdrop.SetStrength(settings.BlurStrength);
         ApplyAlpha();
+        ApplyCaptureAffinity();
         ForceReposition();
-        UpdateDimVisibility();
+        UpdateBlurVisibility();
     }
 
     public void StartFollowing()
@@ -96,7 +99,7 @@ internal sealed class OverlayForm : Form
         ForceReposition();
         if (!Visible)
             Show();
-        UpdateDimVisibility();
+        UpdateBlurVisibility();
 
         if (_mouseHook == IntPtr.Zero)
             _mouseHook = SetWindowsHookEx(WH_MOUSE_LL, _hookProc, GetModuleHandle(null), 0);
@@ -115,13 +118,14 @@ internal sealed class OverlayForm : Form
         }
 
         Hide();
-        UpdateDimVisibility();
+        UpdateBlurVisibility();
     }
 
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
         ApplyAlpha();
+        ApplyCaptureAffinity();
     }
 
     protected override void WndProc(ref Message m)
@@ -144,8 +148,10 @@ internal sealed class OverlayForm : Form
             StopFollowing();
             _fallbackTimer.Dispose();
             _slideTimer.Dispose();
-            foreach (var pane in _dimPanes)
+            _blurTimer.Dispose();
+            foreach (var pane in _blurPanes)
                 pane.Dispose();
+            _backdrop.Dispose();
         }
 
         base.Dispose(disposing);
@@ -249,8 +255,8 @@ internal sealed class OverlayForm : Form
         SetWindowPos(Handle, HWND_TOPMOST, rect.X, rect.Y, rect.Width, rect.Height,
             SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 
-        if (_dimPanes[0].Visible)
-            PlaceDimPanes(rect);
+        if (_blurPanes[0].Visible)
+            PlaceBlurPanes(rect);
     }
 
     private void PollModifierKeys()
@@ -261,17 +267,28 @@ internal sealed class OverlayForm : Form
         _shiftHeld = shift;
 
         var ctrl = IsKeyDown(VK_CONTROL);
-        if (ctrl != _dimSuppressed)
+        if (ctrl != _blurSuppressed)
         {
-            _dimSuppressed = ctrl;
-            UpdateDimVisibility();
+            _blurSuppressed = ctrl;
+            UpdateBlurVisibility();
         }
     }
 
-    private void UpdateDimVisibility()
+    private void UpdateBlurVisibility()
     {
-        var show = _dimEnabled && Visible && !_dimSuppressed;
-        foreach (var pane in _dimPanes)
+        var show = _blurEnabled && Visible && !_blurSuppressed;
+        if (show)
+        {
+            // Panes are left out of the screen capture they display; without that support, don't blur.
+            foreach (var pane in _blurPanes)
+                _ = pane.Handle;
+            show = _blurPanes.All(p => p.ExcludedFromCapture);
+        }
+
+        if (show && !_blurPanes[0].Visible)
+            _backdrop.Refresh();
+
+        foreach (var pane in _blurPanes)
         {
             if (show && !pane.Visible)
                 pane.Show();
@@ -280,16 +297,30 @@ internal sealed class OverlayForm : Form
         }
 
         if (show)
-            PlaceDimPanes(Bounds);
+        {
+            PlaceBlurPanes(Bounds);
+            _blurTimer.Start();
+        }
+        else
+        {
+            _blurTimer.Stop();
+        }
     }
 
-    private void PlaceDimPanes(Rectangle hole)
+    private void RefreshBlur()
+    {
+        _backdrop.Refresh();
+        foreach (var pane in _blurPanes)
+            pane.Invalidate();
+    }
+
+    private void PlaceBlurPanes(Rectangle hole)
     {
         var screen = SystemInformation.VirtualScreen;
-        _dimPanes[0].Place(screen.Left, screen.Top, screen.Width, hole.Top - screen.Top);
-        _dimPanes[1].Place(screen.Left, hole.Bottom, screen.Width, screen.Bottom - hole.Bottom);
-        _dimPanes[2].Place(screen.Left, hole.Top, hole.Left - screen.Left, hole.Height);
-        _dimPanes[3].Place(hole.Right, hole.Top, screen.Right - hole.Right, hole.Height);
+        _blurPanes[0].Place(Rectangle.FromLTRB(screen.Left, screen.Top, screen.Right, hole.Top));
+        _blurPanes[1].Place(Rectangle.FromLTRB(screen.Left, hole.Bottom, screen.Right, screen.Bottom));
+        _blurPanes[2].Place(Rectangle.FromLTRB(screen.Left, hole.Top, hole.Left, hole.Bottom));
+        _blurPanes[3].Place(Rectangle.FromLTRB(hole.Right, hole.Top, screen.Right, hole.Bottom));
     }
 
     private void UpdateScale(Point cursor)
@@ -312,6 +343,13 @@ internal sealed class OverlayForm : Form
     }
 
     private int Scale(int value) => (int)Math.Round(value * _scale);
+
+    private void ApplyCaptureAffinity()
+    {
+        // Keep the highlight out of the blurred snapshot so it doesn't leave a trail in it.
+        if (IsHandleCreated)
+            SetWindowDisplayAffinity(Handle, _blurEnabled ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE);
+    }
 
     private void ApplyAlpha()
     {

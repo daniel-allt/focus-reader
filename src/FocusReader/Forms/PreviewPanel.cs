@@ -14,7 +14,7 @@ internal sealed class PreviewPanel : Panel
     public int HighlightOpacity { get; set; } = 35;
     public int HighlightWidth { get; set; } = 85;
     public int HighlightHeight { get; set; } = 30;
-    public int DimOpacity { get; set; }
+    public int BlurStrength { get; set; }
 
     public PreviewPanel()
     {
@@ -26,13 +26,21 @@ internal sealed class PreviewPanel : Panel
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
+        if (ClientSize.Width <= 0 || ClientSize.Height <= 0)
+            return;
+
         var g = e.Graphics;
         using var font = new Font("Segoe UI", 11f);
         var lineHeight = (int)(font.GetHeight(g) * 1.35f);
         var top = (ClientSize.Height - lineHeight * SampleLines.Length) / 2;
 
-        for (var i = 0; i < SampleLines.Length; i++)
-            TextRenderer.DrawText(g, SampleLines[i], font, new Point(12, top + i * lineHeight), Color.FromArgb(40, 40, 40));
+        using var text = new Bitmap(ClientSize.Width, ClientSize.Height);
+        using (var tg = Graphics.FromImage(text))
+        {
+            tg.Clear(BackColor);
+            for (var i = 0; i < SampleLines.Length; i++)
+                TextRenderer.DrawText(tg, SampleLines[i], font, new Point(12, top + i * lineHeight), Color.FromArgb(40, 40, 40), BackColor);
+        }
 
         var scale = DeviceDpi / 96f;
         var width = Math.Min((int)(HighlightWidth * scale), ClientSize.Width);
@@ -40,12 +48,17 @@ internal sealed class PreviewPanel : Panel
         var centerY = top + lineHeight + lineHeight / 2;
         var rect = new Rectangle((ClientSize.Width - width) / 2, centerY - height / 2, width, height);
 
-        if (DimOpacity > 0)
+        if (BlurStrength > 0)
         {
-            using var dim = new Region(ClientRectangle);
-            dim.Exclude(rect);
-            using var dimBrush = new SolidBrush(Color.FromArgb((int)Math.Round(DimOpacity * 255 / 100.0), Color.Black));
-            g.FillRegion(dimBrush, dim);
+            using var small = Blur.Shrink(text, Blur.FactorFor(BlurStrength));
+            Blur.Expand(g, small, ClientRectangle);
+            g.SetClip(rect);
+            g.DrawImageUnscaled(text, 0, 0);
+            g.ResetClip();
+        }
+        else
+        {
+            g.DrawImageUnscaled(text, 0, 0);
         }
 
         var alpha = (int)Math.Round(HighlightOpacity * 255 / 100.0);
