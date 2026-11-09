@@ -14,6 +14,7 @@ internal sealed class PreviewPanel : Panel
     public int HighlightOpacity { get; set; } = 35;
     public int HighlightWidth { get; set; } = 85;
     public int HighlightHeight { get; set; } = 30;
+    public int DimOpacity { get; set; }
 
     public PreviewPanel()
     {
@@ -38,6 +39,14 @@ internal sealed class PreviewPanel : Panel
         var height = (int)(HighlightHeight * scale);
         var centerY = top + lineHeight + lineHeight / 2;
         var rect = new Rectangle((ClientSize.Width - width) / 2, centerY - height / 2, width, height);
+
+        if (DimOpacity > 0)
+        {
+            using var dim = new Region(ClientRectangle);
+            dim.Exclude(rect);
+            using var dimBrush = new SolidBrush(Color.FromArgb((int)Math.Round(DimOpacity * 255 / 100.0), Color.Black));
+            g.FillRegion(dimBrush, dim);
+        }
 
         var alpha = (int)Math.Round(HighlightOpacity * 255 / 100.0);
         using var brush = new SolidBrush(Color.FromArgb(alpha, HighlightColor));

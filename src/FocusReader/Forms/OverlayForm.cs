@@ -26,8 +26,13 @@ internal sealed class OverlayForm : Form
     private int _baseOffset = 2;
     private bool _stabilize = true;
     private int _baseTolerance = 18;
-    private int _followMs = 800;
+    private int _followMs = 500;
     private long _followUntil;
+    private bool _shiftHeld;
+
+    private readonly DimPaneForm[] _dimPanes = [new(), new(), new(), new()];
+    private bool _dimEnabled;
+    private bool _dimSuppressed;
 
     private int _cursorX;
     private int _anchorY;
@@ -46,7 +51,11 @@ internal sealed class OverlayForm : Form
         Bounds = new Rectangle(-32000, -32000, 1, 1);
 
         _hookProc = MouseHookCallback;
-        _fallbackTimer.Tick += (_, _) => MoveTo(Cursor.Position);
+        _fallbackTimer.Tick += (_, _) =>
+        {
+            PollModifierKeys();
+            MoveTo(Cursor.Position);
+        };
         _slideTimer.Tick += (_, _) => Slide();
     }
 
@@ -72,8 +81,13 @@ internal sealed class OverlayForm : Form
         _stabilize = settings.VerticalStabilization;
         _baseTolerance = settings.VerticalTolerance;
         _followMs = settings.VerticalFollowMs;
+        _dimEnabled = settings.DimSurroundings;
+        var dimAlpha = (byte)Math.Round(settings.DimOpacity * 255 / 100.0);
+        foreach (var pane in _dimPanes)
+            pane.SetAlpha(dimAlpha);
         ApplyAlpha();
         ForceReposition();
+        UpdateDimVisibility();
     }
 
     public void StartFollowing()
@@ -82,6 +96,7 @@ internal sealed class OverlayForm : Form
         ForceReposition();
         if (!Visible)
             Show();
+        UpdateDimVisibility();
 
         if (_mouseHook == IntPtr.Zero)
             _mouseHook = SetWindowsHookEx(WH_MOUSE_LL, _hookProc, GetModuleHandle(null), 0);
@@ -100,6 +115,7 @@ internal sealed class OverlayForm : Form
         }
 
         Hide();
+        UpdateDimVisibility();
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -128,6 +144,8 @@ internal sealed class OverlayForm : Form
             StopFollowing();
             _fallbackTimer.Dispose();
             _slideTimer.Dispose();
+            foreach (var pane in _dimPanes)
+                pane.Dispose();
         }
 
         base.Dispose(disposing);
@@ -137,6 +155,7 @@ internal sealed class OverlayForm : Form
     {
         if (nCode >= 0 && wParam == WM_MOUSEMOVE)
         {
+            PollModifierKeys();
             var info = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
             var screen = SystemInformation.VirtualScreen;
             MoveTo(new Point(
@@ -169,7 +188,7 @@ internal sealed class OverlayForm : Form
 
         // Vertical dead zone: the highlight keeps its line until the cursor drifts past the tolerance.
         // Then it follows the cursor freely for a while (renewed by vertical moves) so the line can be
-        // fine-tuned, and locks again wherever the cursor settled.
+        // fine-tuned, and locks again wherever the cursor settled. Holding Shift keeps it unlocked.
         var now = Environment.TickCount64;
         if (!_stabilize || _currentY is null)
         {
@@ -178,10 +197,10 @@ internal sealed class OverlayForm : Form
             _followUntil = 0;
             _slideTimer.Stop();
         }
-        else if (now < _followUntil)
+        else if (_shiftHeld || now < _followUntil)
         {
             _anchorY = cursor.Y;
-            if (dy > 0 && dy >= dx)
+            if (!_shiftHeld && dy > 0 && dy >= dx)
                 _followUntil = now + _followMs;
             _slideTimer.Start();
         }
@@ -226,9 +245,51 @@ internal sealed class OverlayForm : Form
         var height = Scale(_baseHeight);
         var offset = Scale(_baseOffset);
 
-        SetWindowPos(Handle, HWND_TOPMOST,
-            _cursorX - width / 2, (int)Math.Round(y) - offset - height, width, height,
+        var rect = new Rectangle(_cursorX - width / 2, (int)Math.Round(y) - offset - height, width, height);
+        SetWindowPos(Handle, HWND_TOPMOST, rect.X, rect.Y, rect.Width, rect.Height,
             SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+
+        if (_dimPanes[0].Visible)
+            PlaceDimPanes(rect);
+    }
+
+    private void PollModifierKeys()
+    {
+        var shift = IsKeyDown(VK_SHIFT);
+        if (_shiftHeld && !shift)
+            _followUntil = 0;
+        _shiftHeld = shift;
+
+        var ctrl = IsKeyDown(VK_CONTROL);
+        if (ctrl != _dimSuppressed)
+        {
+            _dimSuppressed = ctrl;
+            UpdateDimVisibility();
+        }
+    }
+
+    private void UpdateDimVisibility()
+    {
+        var show = _dimEnabled && Visible && !_dimSuppressed;
+        foreach (var pane in _dimPanes)
+        {
+            if (show && !pane.Visible)
+                pane.Show();
+            else if (!show && pane.Visible)
+                pane.Hide();
+        }
+
+        if (show)
+            PlaceDimPanes(Bounds);
+    }
+
+    private void PlaceDimPanes(Rectangle hole)
+    {
+        var screen = SystemInformation.VirtualScreen;
+        _dimPanes[0].Place(screen.Left, screen.Top, screen.Width, hole.Top - screen.Top);
+        _dimPanes[1].Place(screen.Left, hole.Bottom, screen.Width, screen.Bottom - hole.Bottom);
+        _dimPanes[2].Place(screen.Left, hole.Top, hole.Left - screen.Left, hole.Height);
+        _dimPanes[3].Place(hole.Right, hole.Top, screen.Right - hole.Right, hole.Height);
     }
 
     private void UpdateScale(Point cursor)

@@ -10,6 +10,8 @@ internal static class NativeMethods
     public const int WS_EX_NOACTIVATE = 0x08000000;
 
     public const int WM_MOUSEMOVE = 0x0200;
+    public const int VK_SHIFT = 0x10;
+    public const int VK_CONTROL = 0x11;
     public const int WM_HOTKEY = 0x0312;
     public const int WM_DPICHANGED = 0x02E0;
 
@@ -97,6 +99,11 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+
+    [DllImport("user32.dll")]
+    public static extern short GetAsyncKeyState(int vKey);
+
+    public static bool IsKeyDown(int vKey) => (GetAsyncKeyState(vKey) & 0x8000) != 0;
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
