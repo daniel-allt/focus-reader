@@ -105,11 +105,8 @@ internal sealed class BlurBackdrop : IDisposable
         }
     }
 
-    public void Dispose()
-    {
-        Stop();
-        _wake.Dispose();
-    }
+    // _wake is not disposed: a worker still finishing a frame waits on it once more before exiting.
+    public void Dispose() => Stop();
 
     private void Run(int session)
     {
@@ -120,6 +117,16 @@ internal sealed class BlurBackdrop : IDisposable
             {
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 var area = SystemInformation.VirtualScreen;
+                if (area.Size != renderer.FrameSize)
+                {
+                    // Render reallocates both frames; stop the window from drawing the one it shows.
+                    lock (_gate)
+                    {
+                        if (renderer.Owns(_frame))
+                            _frame = IntPtr.Zero;
+                    }
+                }
+
                 var frame = renderer.Render(area, _factor);
                 LastRenderMs = watch.Elapsed.TotalMilliseconds;
 
@@ -168,6 +175,8 @@ internal sealed class BlurBackdrop : IDisposable
         private int[] _wx = [];
         private uint[] _rowA = [];
         private uint[] _rowB = [];
+
+        public Size FrameSize => _frameSize;
 
         public bool Owns(IntPtr frame) => frame != IntPtr.Zero && (frame == _frames[0] || frame == _frames[1]);
 
