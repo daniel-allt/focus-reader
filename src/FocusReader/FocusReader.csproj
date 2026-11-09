@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <AssemblyName>FocusReader</AssemblyName>
+    <RootNamespace>FocusReader</RootNamespace>
+    <Product>Focus Reader</Product>
+    <Description>Realce de leitura que acompanha o cursor</Description>
+    <Version>0.1.0</Version>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\app.ico" LogicalName="FocusReader.app.ico" />
+    <EmbeddedResource Include="Assets\app-active.ico" LogicalName="FocusReader.app-active.ico" />
+  </ItemGroup>
+
+</Project>

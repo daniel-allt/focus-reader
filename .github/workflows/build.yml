@@ -1,0 +1,54 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build
+        run: dotnet build FocusReader.sln -c Release
+
+      - name: Publish (framework-dependent, requires .NET 8 Desktop Runtime)
+        run: dotnet publish src/FocusReader/FocusReader.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish/framework-dependent
+
+      - name: Publish (self-contained)
+        run: dotnet publish src/FocusReader/FocusReader.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish/self-contained
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FocusReader-win-x64
+          path: publish/framework-dependent/FocusReader.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FocusReader-win-x64-self-contained
+          path: publish/self-contained/FocusReader.exe
+
+      - name: Package release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          Compress-Archive publish/framework-dependent/FocusReader.exe FocusReader-win-x64.zip
+          Compress-Archive publish/self-contained/FocusReader.exe FocusReader-win-x64-self-contained.zip
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: |
+            FocusReader-win-x64.zip
+            FocusReader-win-x64-self-contained.zip
