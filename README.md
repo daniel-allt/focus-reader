@@ -21,7 +21,7 @@ Aplicativo para Windows (C# / WinForms, .NET 8) que ajuda na leitura: ao ativar 
 | Opacidade | 5% a 95% (o restante é transparência) |
 | Tamanho do realce | Largura x altura em pixels (escalado pelo DPI) |
 | Distância do cursor | Espaço entre a ponta do cursor e a borda inferior do realce |
-| Estabilização vertical | O realce fica preso na linha e segue o mouse só na horizontal até o cursor se afastar mais que a tolerância (padrão 18 px); então desliza suavemente para a nova linha |
+| Estabilização vertical | O realce fica preso na linha e segue o mouse só na horizontal até o cursor se afastar mais que a tolerância (padrão 18 px); então destrava e segue o cursor por um tempo (padrão 800 ms, reiniciado a cada movimento vertical) para o ajuste fino, e trava de novo onde o cursor parou |
 | Atalho global | Qualquer combinação com Ctrl/Alt/Shift/Win, ou F1–F24 sozinhas |
 
 As configurações ficam em `%APPDATA%\FocusReader\settings.json`.

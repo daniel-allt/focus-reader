@@ -26,6 +26,8 @@ internal sealed class OverlayForm : Form
     private int _baseOffset = 2;
     private bool _stabilize = true;
     private int _baseTolerance = 18;
+    private int _followMs = 800;
+    private long _followUntil;
 
     private int _cursorX;
     private int _anchorY;
@@ -69,6 +71,7 @@ internal sealed class OverlayForm : Form
         _baseOffset = settings.CursorOffset;
         _stabilize = settings.VerticalStabilization;
         _baseTolerance = settings.VerticalTolerance;
+        _followMs = settings.VerticalFollowMs;
         ApplyAlpha();
         ForceReposition();
     }
@@ -158,20 +161,34 @@ internal sealed class OverlayForm : Form
         if (cursor == _lastCursor || !IsHandleCreated)
             return;
 
+        var dx = Math.Abs(cursor.X - _lastCursor.X);
+        var dy = Math.Abs(cursor.Y - _lastCursor.Y);
         _lastCursor = cursor;
         UpdateScale(cursor);
         _cursorX = cursor.X;
 
         // Vertical dead zone: the highlight keeps its line until the cursor drifts past the tolerance.
+        // Then it follows the cursor freely for a while (renewed by vertical moves) so the line can be
+        // fine-tuned, and locks again wherever the cursor settled.
+        var now = Environment.TickCount64;
         if (!_stabilize || _currentY is null)
         {
             _anchorY = cursor.Y;
             _currentY = cursor.Y;
+            _followUntil = 0;
             _slideTimer.Stop();
+        }
+        else if (now < _followUntil)
+        {
+            _anchorY = cursor.Y;
+            if (dy > 0 && dy >= dx)
+                _followUntil = now + _followMs;
+            _slideTimer.Start();
         }
         else if (Math.Abs(cursor.Y - _anchorY) > Scale(_baseTolerance))
         {
             _anchorY = cursor.Y;
+            _followUntil = now + _followMs;
             _slideTimer.Start();
         }
 
