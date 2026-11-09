@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -39,15 +39,29 @@ jobs:
           name: FocusReader-win-x64-self-contained
           path: publish/self-contained/FocusReader.exe
 
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: FocusReader-win-x64
+          path: framework-dependent
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: FocusReader-win-x64-self-contained
+          path: self-contained
+
       - name: Package release assets
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: pwsh
         run: |
-          Compress-Archive publish/framework-dependent/FocusReader.exe FocusReader-win-x64.zip
-          Compress-Archive publish/self-contained/FocusReader.exe FocusReader-win-x64-self-contained.zip
+          (cd framework-dependent && zip ../FocusReader-win-x64.zip FocusReader.exe)
+          (cd self-contained && zip ../FocusReader-win-x64-self-contained.zip FocusReader.exe)
 
       - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/v')
         with:
           files: |
             FocusReader-win-x64.zip

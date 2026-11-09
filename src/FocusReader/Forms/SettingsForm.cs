@@ -67,6 +67,10 @@ internal sealed class SettingsForm : Form
         base.OnResize(e);
         if (WindowState == FormWindowState.Minimized)
         {
+            if (_hotkeyBox.ContainsFocus)
+                ActiveControl = _cursorCombo;
+
+            _setHotkeySuspended(false);
             Hide();
             WindowState = FormWindowState.Normal;
         }

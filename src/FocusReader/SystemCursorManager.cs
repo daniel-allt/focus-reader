@@ -42,7 +42,9 @@ internal static class SystemCursorManager
         if (!_applied)
             return;
 
-        SystemParametersInfo(SPI_SETCURSORS, 0, IntPtr.Zero, 0);
+        if (!SystemParametersInfo(SPI_SETCURSORS, 0, IntPtr.Zero, 0))
+            return;
+
         _applied = false;
         TryDeleteMarker();
     }
@@ -53,8 +55,8 @@ internal static class SystemCursorManager
         if (!File.Exists(MarkerPath))
             return;
 
-        SystemParametersInfo(SPI_SETCURSORS, 0, IntPtr.Zero, 0);
-        TryDeleteMarker();
+        if (SystemParametersInfo(SPI_SETCURSORS, 0, IntPtr.Zero, 0))
+            TryDeleteMarker();
     }
 
     private static IntPtr CreateCursorHandle(CursorChoice choice, string? customPath)
