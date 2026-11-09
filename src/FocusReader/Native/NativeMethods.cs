@@ -100,6 +100,36 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
 
+    public const uint SRCCOPY = 0x00CC0020;
+    public const int RGN_DIFF = 4;
+
+    [DllImport("gdi32.dll")]
+    public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool DeleteDC(IntPtr hdc);
+
+    [DllImport("gdi32.dll")]
+    public static extern IntPtr SelectObject(IntPtr hdc, IntPtr obj);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool DeleteObject(IntPtr obj);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool BitBlt(IntPtr hdc, int x, int y, int cx, int cy, IntPtr hdcSrc, int x1, int y1, uint rop);
+
+    [DllImport("gdi32.dll")]
+    public static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+
+    [DllImport("gdi32.dll")]
+    public static extern int CombineRgn(IntPtr dest, IntPtr src1, IntPtr src2, int mode);
+
+    [DllImport("user32.dll")]
+    public static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
     public const uint WDA_NONE = 0x0;
     public const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
 

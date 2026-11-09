@@ -30,10 +30,10 @@ internal sealed class OverlayForm : Form
     private long _followUntil;
     private bool _shiftHeld;
 
-    private readonly System.Windows.Forms.Timer _blurTimer = new() { Interval = 120 };
     private readonly BlurBackdrop _backdrop = new();
-    private readonly BlurPaneForm[] _blurPanes;
+    private readonly BlurWindow _blurWindow;
     private bool _blurEnabled;
+    private bool _blurWanted;
     private bool _blurSuppressed;
 
     private int _cursorX;
@@ -59,8 +59,8 @@ internal sealed class OverlayForm : Form
             MoveTo(Cursor.Position);
         };
         _slideTimer.Tick += (_, _) => Slide();
-        _blurPanes = [new(_backdrop), new(_backdrop), new(_backdrop), new(_backdrop)];
-        _blurTimer.Tick += (_, _) => RefreshBlur();
+        _blurWindow = new BlurWindow(_backdrop);
+        _backdrop.FrameReady += OnBlurFrameReady;
     }
 
     protected override bool ShowWithoutActivation => true;
@@ -148,10 +148,9 @@ internal sealed class OverlayForm : Form
             StopFollowing();
             _fallbackTimer.Dispose();
             _slideTimer.Dispose();
-            _blurTimer.Dispose();
-            foreach (var pane in _blurPanes)
-                pane.Dispose();
+            _backdrop.FrameReady -= OnBlurFrameReady;
             _backdrop.Dispose();
+            _blurWindow.Dispose();
         }
 
         base.Dispose(disposing);
@@ -255,8 +254,8 @@ internal sealed class OverlayForm : Form
         SetWindowPos(Handle, HWND_TOPMOST, rect.X, rect.Y, rect.Width, rect.Height,
             SWP_NOACTIVATE | SWP_NOOWNERZORDER);
 
-        if (_blurPanes[0].Visible)
-            PlaceBlurPanes(rect);
+        if (_blurWindow.Visible)
+            _blurWindow.Cover(SystemInformation.VirtualScreen, rect);
     }
 
     private void PollModifierKeys()
@@ -279,48 +278,49 @@ internal sealed class OverlayForm : Form
         var show = _blurEnabled && Visible && !_blurSuppressed;
         if (show)
         {
-            // Panes are left out of the screen capture they display; without that support, don't blur.
-            foreach (var pane in _blurPanes)
-                _ = pane.Handle;
-            show = _blurPanes.All(p => p.ExcludedFromCapture);
+            // The window is left out of the screen capture it displays; without that support, don't blur.
+            _ = _blurWindow.Handle;
+            show = _blurWindow.ExcludedFromCapture;
         }
 
-        if (show && !_blurPanes[0].Visible)
-            _backdrop.Refresh();
-
-        foreach (var pane in _blurPanes)
-        {
-            if (show && !pane.Visible)
-                pane.Show();
-            else if (!show && pane.Visible)
-                pane.Hide();
-        }
-
+        _blurWanted = show;
         if (show)
         {
-            PlaceBlurPanes(Bounds);
-            _blurTimer.Start();
+            // Shown when the first fresh frame arrives (OnBlurFrameReady), so stale content never flashes.
+            _backdrop.Start();
         }
         else
         {
-            _blurTimer.Stop();
+            _blurWindow.Hide();
+            _backdrop.Stop();
         }
     }
 
-    private void RefreshBlur()
+    private void OnBlurFrameReady()
     {
-        _backdrop.Refresh();
-        foreach (var pane in _blurPanes)
-            pane.Invalidate();
+        try
+        {
+            if (IsHandleCreated && !IsDisposed)
+                BeginInvoke(ShowBlurFrame);
+        }
+        catch (InvalidOperationException)
+        {
+            // The form is being torn down.
+        }
     }
 
-    private void PlaceBlurPanes(Rectangle hole)
+    private void ShowBlurFrame()
     {
-        var screen = SystemInformation.VirtualScreen;
-        _blurPanes[0].Place(Rectangle.FromLTRB(screen.Left, screen.Top, screen.Right, hole.Top));
-        _blurPanes[1].Place(Rectangle.FromLTRB(screen.Left, hole.Bottom, screen.Right, screen.Bottom));
-        _blurPanes[2].Place(Rectangle.FromLTRB(screen.Left, hole.Top, hole.Left, hole.Bottom));
-        _blurPanes[3].Place(Rectangle.FromLTRB(hole.Right, hole.Top, screen.Right, hole.Bottom));
+        if (!_blurWanted)
+            return;
+
+        if (!_blurWindow.Visible)
+        {
+            _blurWindow.Cover(SystemInformation.VirtualScreen, Bounds);
+            _blurWindow.Show();
+        }
+
+        _blurWindow.Invalidate();
     }
 
     private void UpdateScale(Point cursor)

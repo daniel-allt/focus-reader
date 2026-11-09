@@ -28,9 +28,10 @@ internal static class Blur
         return target;
     }
 
-    public static void Expand(Graphics g, Bitmap small, Rectangle destination)
+    public static void Expand(Graphics g, Bitmap small, Rectangle destination,
+        InterpolationMode mode = InterpolationMode.HighQualityBilinear)
     {
-        g.InterpolationMode = InterpolationMode.HighQualityBilinear;
+        g.InterpolationMode = mode;
         g.PixelOffsetMode = PixelOffsetMode.Half;
         using var attributes = new ImageAttributes();
         attributes.SetWrapMode(WrapMode.TileFlipXY);
@@ -38,73 +39,163 @@ internal static class Blur
     }
 }
 
-/// <summary>Blurred snapshot of the whole virtual screen, refreshed periodically while blurring is shown.</summary>
+/// <summary>
+/// Blurred snapshot of the whole virtual screen, rendered on a background thread while blurring is
+/// shown so capturing and scaling never stall the UI thread (which also runs the mouse hook).
+/// </summary>
 internal sealed class BlurBackdrop : IDisposable
 {
-    private Bitmap? _frame;
-    private Bitmap? _small;
-    private Rectangle _area;
-    private int _factor = Blur.FactorFor(3);
+    private const int FrameIntervalMs = 150;
+
+    private readonly object _gate = new();
+    private readonly AutoResetEvent _wake = new(false);
+    private IntPtr _frame;
+    private Rectangle _frameArea;
+    private int _session;
+    private bool _running;
+    private volatile int _factor = Blur.FactorFor(3);
+
+    /// <summary>Raised on the worker thread after a new frame is available.</summary>
+    public event Action? FrameReady;
+
+    public double LastRenderMs { get; private set; }
 
     public void SetStrength(int strength) => _factor = Blur.FactorFor(strength);
 
-    public void Refresh()
+    public void Start()
     {
-        var area = SystemInformation.VirtualScreen;
-        if (area.Width <= 0 || area.Height <= 0)
+        if (_running)
             return;
 
-        if (_frame is null || _frame.Size != area.Size)
-        {
-            _frame?.Dispose();
-            _frame = new Bitmap(area.Width, area.Height, PixelFormat.Format32bppPArgb);
-        }
-
-        try
-        {
-            using var g = Graphics.FromImage(_frame);
-            g.CopyFromScreen(area.Location, Point.Empty, area.Size);
-        }
-        catch (Exception)
-        {
-            // Capturing fails on the secure desktop (UAC, lock screen); keep the previous frame.
-            return;
-        }
-
-        _small = Blur.Shrink(_frame, _factor, _small);
-        using (var g = Graphics.FromImage(_frame))
-            Blur.Expand(g, _small, new Rectangle(Point.Empty, area.Size));
-        _area = area;
+        _running = true;
+        var session = Interlocked.Increment(ref _session);
+        new Thread(() => Run(session)) { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "Focus Reader blur" }.Start();
     }
 
-    public void Draw(Graphics g, Rectangle screenRect)
+    public void Stop()
     {
-        if (_frame is null || _area.IsEmpty)
-        {
-            g.Clear(Color.Gray);
+        if (!_running)
             return;
-        }
 
-        g.CompositingMode = CompositingMode.SourceCopy;
-        g.InterpolationMode = InterpolationMode.NearestNeighbor;
-        g.DrawImage(_frame, new Rectangle(Point.Empty, screenRect.Size),
-            new Rectangle(screenRect.X - _area.X, screenRect.Y - _area.Y, screenRect.Width, screenRect.Height),
-            GraphicsUnit.Pixel);
+        _running = false;
+        Interlocked.Increment(ref _session);
+        _wake.Set();
+        lock (_gate)
+        {
+            if (_frame != IntPtr.Zero)
+                DeleteObject(_frame);
+            _frame = IntPtr.Zero;
+        }
+    }
+
+    /// <summary>Copies the part of the current frame under <paramref name="clip"/> (window client coordinates).</summary>
+    public bool Draw(IntPtr hdc, Rectangle clip, Point windowOrigin)
+    {
+        lock (_gate)
+        {
+            if (_frame == IntPtr.Zero)
+                return false;
+
+            var memory = CreateCompatibleDC(hdc);
+            var previous = SelectObject(memory, _frame);
+            BitBlt(hdc, clip.X, clip.Y, clip.Width, clip.Height, memory,
+                clip.X + windowOrigin.X - _frameArea.X, clip.Y + windowOrigin.Y - _frameArea.Y, SRCCOPY);
+            SelectObject(memory, previous);
+            DeleteDC(memory);
+            return true;
+        }
     }
 
     public void Dispose()
     {
-        _frame?.Dispose();
-        _small?.Dispose();
+        Stop();
+        _wake.Dispose();
+    }
+
+    private void Run(int session)
+    {
+        Bitmap? capture = null;
+        Bitmap? small = null;
+        try
+        {
+            while (Volatile.Read(ref _session) == session)
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                if (Render(session, ref capture, ref small))
+                {
+                    LastRenderMs = watch.Elapsed.TotalMilliseconds;
+                    FrameReady?.Invoke();
+                }
+
+                _wake.WaitOne(Math.Max(30, FrameIntervalMs - (int)watch.ElapsedMilliseconds));
+            }
+        }
+        finally
+        {
+            capture?.Dispose();
+            small?.Dispose();
+        }
+    }
+
+    private bool Render(int session, ref Bitmap? capture, ref Bitmap? small)
+    {
+        var area = SystemInformation.VirtualScreen;
+        if (area.Width <= 0 || area.Height <= 0)
+            return false;
+
+        if (capture is null || capture.Size != area.Size)
+        {
+            capture?.Dispose();
+            capture = new Bitmap(area.Width, area.Height, PixelFormat.Format32bppPArgb);
+        }
+
+        try
+        {
+            using (var g = Graphics.FromImage(capture))
+                g.CopyFromScreen(area.Location, Point.Empty, area.Size);
+
+            small = Blur.Shrink(capture, _factor, small);
+            using (var g = Graphics.FromImage(capture))
+            {
+                g.CompositingMode = CompositingMode.SourceCopy;
+                Blur.Expand(g, small, new Rectangle(Point.Empty, area.Size), InterpolationMode.Bilinear);
+            }
+        }
+        catch (Exception)
+        {
+            // Capturing fails on the secure desktop (UAC, lock screen); try again on the next frame.
+            return false;
+        }
+
+        var frame = capture.GetHbitmap();
+        lock (_gate)
+        {
+            if (Volatile.Read(ref _session) != session)
+            {
+                DeleteObject(frame);
+                return false;
+            }
+
+            if (_frame != IntPtr.Zero)
+                DeleteObject(_frame);
+            _frame = frame;
+            _frameArea = area;
+        }
+
+        return true;
     }
 }
 
-/// <summary>Click-through window showing its part of the blurred backdrop; four of them surround the highlight.</summary>
-internal sealed class BlurPaneForm : Form
+/// <summary>
+/// Click-through window covering the virtual screen with the blurred backdrop. The highlight area is
+/// cut out with a window region, so moving the highlight only changes the region and needs no repaint.
+/// </summary>
+internal sealed class BlurWindow : Form
 {
     private readonly BlurBackdrop _backdrop;
+    private Rectangle _hole;
 
-    public BlurPaneForm(BlurBackdrop backdrop)
+    public BlurWindow(BlurBackdrop backdrop)
     {
         _backdrop = backdrop;
         FormBorderStyle = FormBorderStyle.None;
@@ -113,10 +204,11 @@ internal sealed class BlurPaneForm : Form
         AutoScaleMode = AutoScaleMode.None;
         ControlBox = false;
         TopMost = true;
-        DoubleBuffered = true;
         BackColor = Color.Gray;
         Text = "Focus Reader Blur";
         Bounds = new Rectangle(-32000, -32000, 1, 1);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.Opaque, true);
+        SetStyle(ControlStyles.OptimizedDoubleBuffer, false);
     }
 
     /// <summary>False when Windows can't hide this window from screen capture (older than Windows 10 2004).</summary>
@@ -134,16 +226,29 @@ internal sealed class BlurPaneForm : Form
         }
     }
 
-    public void Place(Rectangle bounds)
+    public void Cover(Rectangle screen, Rectangle hole)
     {
-        bounds.Width = Math.Max(bounds.Width, 0);
-        bounds.Height = Math.Max(bounds.Height, 0);
-        if (!IsHandleCreated || bounds == Bounds)
+        if (!IsHandleCreated)
             return;
 
-        SetWindowPos(Handle, HWND_TOPMOST, bounds.X, bounds.Y, bounds.Width, bounds.Height,
-            SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-        Invalidate();
+        if (screen != Bounds)
+        {
+            SetWindowPos(Handle, HWND_TOPMOST, screen.X, screen.Y, screen.Width, screen.Height,
+                SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+            _hole = Rectangle.Empty;
+        }
+
+        hole.Offset(-screen.X, -screen.Y);
+        if (hole == _hole)
+            return;
+
+        _hole = hole;
+        var region = CreateRectRgn(0, 0, screen.Width, screen.Height);
+        var cutout = CreateRectRgn(hole.Left, hole.Top, hole.Right, hole.Bottom);
+        CombineRgn(region, region, cutout, RGN_DIFF);
+        DeleteObject(cutout);
+        if (SetWindowRgn(Handle, region, true) == 0)
+            DeleteObject(region);
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -157,7 +262,18 @@ internal sealed class BlurPaneForm : Form
     {
     }
 
-    protected override void OnPaint(PaintEventArgs e) => _backdrop.Draw(e.Graphics, Bounds);
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var hdc = e.Graphics.GetHdc();
+        try
+        {
+            _backdrop.Draw(hdc, e.ClipRectangle, Location);
+        }
+        finally
+        {
+            e.Graphics.ReleaseHdc(hdc);
+        }
+    }
 
     protected override void WndProc(ref Message m)
     {
