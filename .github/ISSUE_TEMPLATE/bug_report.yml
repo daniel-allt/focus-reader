@@ -28,6 +28,8 @@ body:
     attributes:
       label: Displays
       description: Number of monitors, resolution and scale (100%, 125%, 150%...), and mouse pointer size if changed.
+    validations:
+      required: true
   - type: textarea
     id: settings
     attributes:
