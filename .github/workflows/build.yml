@@ -40,12 +40,12 @@ jobs:
       - name: Publish (self-contained)
         run: dotnet publish src/FocusReader/FocusReader.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish/self-contained
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: FocusReader-win-x64
           path: publish/framework-dependent/FocusReader.exe
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: FocusReader-win-x64-self-contained
           path: publish/self-contained/FocusReader.exe
