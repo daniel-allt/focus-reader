@@ -5,7 +5,7 @@ Aplicativo para Windows (C# / WinForms, .NET 8) que ajuda na leitura: ao ativar 
 ## Funcionalidades
 
 - Fica na **bandeja do sistema** (system tray), sem janela na barra de tarefas.
-- Menu de contexto do ícone: **Ativar/Desativar modo de leitura**, **Configurações...** e **Sair**. Duplo clique no ícone abre as configurações.
+- Menu de contexto do ícone: **Ativar/Desativar modo de leitura**, **Configurações...**, **Sobre...** (versão e número de build) e **Sair**. Duplo clique no ícone abre as configurações.
 - **Atalho global** (padrão `Ctrl + Alt + R`) para ativar/desativar o modo de leitura de qualquer programa.
 - **Estabilização vertical**: pequenos desvios verticais do mouse não tiram o realce da linha.
 - **Desfocar ao redor** (opcional): desfoca levemente o restante da tela; segure Ctrl para ver tudo nítido.
@@ -54,6 +54,8 @@ O GitHub Actions compila a cada push/PR e disponibiliza os dois executáveis com
 src/FocusReader/
   Program.cs                  ponto de entrada (instância única, tratamento de erros)
   TrayApplicationContext.cs   ícone da bandeja, menu, ativação do modo de leitura
+  AppVersion.cs               versão, build e commit gravados no executável
+  Forms/AboutForm.cs          tela Sobre
   AppSettings.cs              modelo e persistência das configurações (JSON)
   GlobalHotkey.cs             atalho global (RegisterHotKey)
   SystemCursorManager.cs      troca/restauração do cursor do sistema
@@ -62,3 +64,13 @@ src/FocusReader/
   Forms/HotkeyTextBox.cs      campo para capturar o atalho
   Forms/PreviewPanel.cs       pré-visualização do realce
 ```
+
+## Versão
+
+A versão é gerada automaticamente no CI e aparece em **Sobre...**:
+
+- **Versão**: vem da tag do release (`v1.2.3` → `1.2.3`, `v1.2.3-beta.1` → `1.2.3-beta.1`). Builds sem tag usam `DefaultVersion` do `FocusReader.csproj`.
+- **Build**: número da execução do workflow no GitHub Actions (`github.run_number`), também gravado como quarto número da versão do arquivo (`1.2.3.57`). Builds locais mostram "build local".
+- **Commit**: hash curto do commit compilado.
+
+Para publicar uma versão: `git tag v1.2.3 && git push origin v1.2.3`.

@@ -14,6 +14,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private AppSettings _settings;
     private SettingsForm? _settingsForm;
+    private AboutForm? _aboutForm;
     private bool _active;
 
     public TrayApplicationContext()
@@ -25,10 +26,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             Font = new Font(SystemFonts.MenuFont ?? Control.DefaultFont, FontStyle.Bold),
         };
+        var aboutItem = new ToolStripMenuItem("Sobre...", null, (_, _) => OpenAbout());
         var exitItem = new ToolStripMenuItem("Sair", null, (_, _) => ExitThread());
 
         var menu = new ContextMenuStrip();
-        menu.Items.AddRange([_toggleItem, settingsItem, new ToolStripSeparator(), exitItem]);
+        menu.Items.AddRange([_toggleItem, settingsItem, aboutItem, new ToolStripSeparator(), exitItem]);
 
         _tray = new NotifyIcon
         {
@@ -58,6 +60,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
     }
 
     private void Toggle() => SetActive(!_active);
+
+    private void OpenAbout()
+    {
+        if (_aboutForm is { IsDisposed: false })
+        {
+            _aboutForm.Activate();
+            return;
+        }
+
+        _aboutForm = new AboutForm();
+        _aboutForm.FormClosed += (_, _) => _aboutForm = null;
+        _aboutForm.Show();
+    }
 
     private void SetActive(bool active)
     {
@@ -166,6 +181,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         SetActive(false);
         SystemEvents.SessionEnding -= OnSessionEnding;
         _settingsForm?.Close();
+        _aboutForm?.Close();
         _tray.Visible = false;
         _tray.Dispose();
         _hotkey.Dispose();
