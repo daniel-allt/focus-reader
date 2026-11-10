@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <AssemblyName>FocusReader</AssemblyName>
+    <RootNamespace>FocusReader</RootNamespace>
+    <Product>Focus Reader</Product>
+    <Description>Realce de leitura que acompanha o cursor</Description>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!--
+    Versioning: CI sets ReleaseVersion from the release tag (v1.2.3 -> 1.2.3), BuildNumber from the
+    workflow run number and CommitSha from the commit. Local builds fall back to DefaultVersion, build 0.
+  -->
+  <PropertyGroup>
+    <DefaultVersion>0.1.0</DefaultVersion>
+    <Version Condition="'$(ReleaseVersion)' != ''">$(ReleaseVersion)</Version>
+    <Version Condition="'$(ReleaseVersion)' == ''">$(DefaultVersion)</Version>
+    <BuildNumber Condition="'$(BuildNumber)' == ''">0</BuildNumber>
+    <ShortCommit Condition="'$(CommitSha)' != '' And $(CommitSha.Length) &gt; 7">$(CommitSha.Substring(0, 7))</ShortCommit>
+    <ShortCommit Condition="'$(ShortCommit)' == ''">$(CommitSha)</ShortCommit>
+    <AssemblyVersion>$([System.Text.RegularExpressions.Regex]::Match($(Version), '^\d+\.\d+\.\d+')).0</AssemblyVersion>
+    <FileVersion>$([System.Text.RegularExpressions.Regex]::Match($(Version), '^\d+\.\d+\.\d+')).$(BuildNumber)</FileVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <InformationalVersion>$(Version)</InformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="BuildNumber" Value="$(BuildNumber)" />
+    <AssemblyMetadata Include="Commit" Value="$(ShortCommit)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\app.ico" LogicalName="FocusReader.app.ico" />
+    <EmbeddedResource Include="Assets\app-active.ico" LogicalName="FocusReader.app-active.ico" />
+  </ItemGroup>
+
+</Project>
